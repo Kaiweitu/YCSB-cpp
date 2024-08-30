@@ -113,6 +113,8 @@ int main(const int argc, const char *argv[]) {
     dbs.push_back(db);
   }
 
+  dbs[0]->Init();
+
   ycsbc::CoreWorkload wl;
   wl.Init(props);
 
@@ -140,8 +142,8 @@ int main(const int argc, const char *argv[]) {
         thread_ops++;
       }
 
-      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i], &wl,
-                                             thread_ops, true, true, !do_transaction, &latch, nullptr));
+      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[0], &wl,
+                                             thread_ops, true, false, !do_transaction, &latch, nullptr));
     }
     assert((int)client_threads.size() == num_threads);
 
@@ -196,8 +198,8 @@ int main(const int argc, const char *argv[]) {
         rlim = new ycsbc::utils::RateLimiter(per_thread_ops, per_thread_ops);
       }
       rate_limiters.push_back(rlim);
-      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i], &wl,
-                                             thread_ops, false, !do_load, true, &latch, rlim));
+      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[0], &wl,
+                                             thread_ops, false, false, true, &latch, rlim));
     }
 
     std::future<void> rlim_future;

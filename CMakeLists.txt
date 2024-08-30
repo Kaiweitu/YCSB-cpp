@@ -25,6 +25,8 @@ option(BIND_ROCKSDB "build with rocksdb" OFF)
 option(BIND_LMDB "build with lmdb" OFF)
 option(BIND_LEVELDB "build with leveldb" OFF)
 option(BIND_WIREDTIGER "build with wiredtiger" OFF)
+option(BIND_CACHELIB "build with CacheLib" OFF)
+
 
 option(WITH_ZLIB "linking YCSB with zlib; needed by HdrHISTOGRAM, DO NOT TURN OFF" ON)
 option(WITH_LZ4 "linking YCSB with lz4" OFF)
@@ -35,6 +37,7 @@ option(WITH_BZ2 "linking YCSB with bzip2" OFF)
 file(GLOB_RECURSE YCSB_CORE_SRC "core/*.cc")
 
 include(FindThreads)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 add_executable(ycsb ${YCSB_CORE_SRC})
 target_include_directories(ycsb PRIVATE ${PROJECT_SOURCE_DIR})
@@ -115,6 +118,30 @@ if (BIND_WIREDTIGER)
 else()
     message(STATUS "BIND_WIREDTIGER - OFF")
 endif()
+
+if (BIND_CACHELIB)
+    message(STATUS "BIND_CACHELIB - ON")
+    # Adding source files
+    file(GLOB_RECURSE YCSB_CACHELIB_SRC "cachelib/*.cc")
+    target_sources(ycsb PRIVATE ${YCSB_CACHELIB_SRC})
+    # Use the correct lowercase package name
+    find_package(cachelib CONFIG REQUIRED)
+    
+    # Check if cachelib was found using the correct variable
+    if(cachelib_FOUND)
+        message(STATUS "Found cachelib library")
+        # Linking against the imported target provided by cachelib, adjust target name as necessary
+        target_link_libraries(ycsb PRIVATE cachelib)
+    else()
+        message(STATUS "cachelib not found, trying to find library manually")
+        find_library(CACHELIB_LIB cachelib REQUIRED)
+        target_link_libraries(ycsb PRIVATE ${CACHELIB_LIB})
+    endif()
+else()
+    message(STATUS "BIND_CACHELIB - OFF")
+endif()
+
+
 
 if(WITH_ZLIB)
     message(STATUS "WITH_ZLIB - ON")
@@ -199,3 +226,6 @@ include_directories(HdrHistogram_c/include)
 add_compile_definitions(HDRMEASUREMENT)
 add_dependencies(ycsb hdr_histogram_static)
 target_link_libraries(ycsb PRIVATE hdr_histogram_static)
+include_directories(/usr/include)  # Path to the sodium headers
+link_directories(/usr/lib/x86_64-linux-gnu)  # Path to the libsodium librar
+
