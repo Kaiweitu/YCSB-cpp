@@ -11,6 +11,7 @@
 #include <iostream>
 #include <string>
 #include <mutex>
+#include <atomic>
 
 #include "core/db.h"
 #include "utils/properties.h"
@@ -89,8 +90,10 @@ namespace ycsbc
     std::string field_prefix_;
 
     // static leveldb::DB *db_;
+    // std::atomic<uint64_t> access_counter(0);
     static int ref_cnt_;
     static std::mutex mu_;
+    static int init_cnt_;
   };
 
   DB *NewCachelibDB();

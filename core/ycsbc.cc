@@ -112,8 +112,13 @@ int main(const int argc, const char *argv[]) {
     }
     dbs.push_back(db);
   }
+  int db_num = 2;
 
-  dbs[0]->Init();
+  for (int i = 0; i < db_num; i++)
+    dbs[i]->Init();
+
+  // dbs[0]->Ini;
+  // dbs[1]->Init();
 
   ycsbc::CoreWorkload wl;
   wl.Init(props);
@@ -123,8 +128,12 @@ int main(const int argc, const char *argv[]) {
   const int status_interval = std::stoi(props.GetProperty("status.interval", "10"));
 
   // load phase
+  std::vector<std::atomic<uint64_t>> ops_thread(num_threads);
+
+  for (auto& atomic_ops : ops_thread) atomic_ops = 0;
+  const int total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
   if (do_load) {
-    const int total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
+  
 
     ycsbc::utils::CountDownLatch latch(num_threads);
     ycsbc::utils::Timer<double> timer;
@@ -142,8 +151,8 @@ int main(const int argc, const char *argv[]) {
         thread_ops++;
       }
 
-      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[0], &wl,
-                                             thread_ops, true, false, !do_transaction, &latch, nullptr));
+      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i % db_num], &wl,
+                                             thread_ops, true, false, !do_transaction, &latch, nullptr, std::ref(ops_thread[i])));
     }
     assert((int)client_threads.size() == num_threads);
 
@@ -166,7 +175,9 @@ int main(const int argc, const char *argv[]) {
   measurements->Reset();
   std::this_thread::sleep_for(std::chrono::seconds(stoi(props.GetProperty("sleepafterload", "0"))));
 
-
+  // ops_overall = 0;
+  // std::fill(ops_thread.begin(), ops_thread.end(), 0);
+  for (auto& atomic_ops : ops_thread) atomic_ops = 0;
   // transaction phase
   if (do_transaction) {
     // initial ops per second, unlimited if <= 0
@@ -193,29 +204,56 @@ int main(const int argc, const char *argv[]) {
         thread_ops++;
       }
       ycsbc::utils::RateLimiter *rlim = nullptr;
-      if (ops_limit > 0 || rate_file != "") {
-        int64_t per_thread_ops = ops_limit / num_threads;
-        rlim = new ycsbc::utils::RateLimiter(per_thread_ops, per_thread_ops);
-      }
+      // if (ops_limit > 0 || rate_file != "") {
+      //   int64_t per_thread_ops = ops_limit / num_threads;
+      //   rlim = new ycsbc::utils::RateLimiter(per_thread_ops, per_thread_ops);
+      // }
       rate_limiters.push_back(rlim);
-      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[0], &wl,
-                                             thread_ops, false, false, true, &latch, rlim));
+      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i % db_num], &wl,
+                                             thread_ops, false, false, true, &latch, rlim, std::ref(ops_thread[i])));
     }
 
-    std::future<void> rlim_future;
-    if (rate_file != "") {
-      rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &latch);
-    }
-
+    // std::future<void> rlim_future;
+    // if (rate_file != "") {
+    //   rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &latch);
+    // }
+    
     assert((int)client_threads.size() == num_threads);
 
-    int sum = 0;
+
+    
+    uint64_t sum = 0;
+    uint64_t prev_sum = 0;
+    while (true) {
+    // int sum = 0;
+    // for (auto &n : client_threads) {
+    //   assert(n.valid());
+    //   sum += n.get();
+    // }
+
+      ycsbc::utils::Timer<double> period_timer;
+      period_timer.Start();
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+
+      sum = 0;
+      for (auto &ops_num : ops_thread) 
+        sum += ops_num;
+      double period_time = period_timer.End();
+
+      std::cout << "Run throughput(ops/sec): " << (sum  - prev_sum)/ period_time << std::endl; 
+      if (sum >= total_ops)
+        break;
+
+      prev_sum = sum;
+    }
+    
+    sum = 0;
     for (auto &n : client_threads) {
       assert(n.valid());
       sum += n.get();
     }
-    double runtime = timer.End();
 
+    double runtime = timer.End();
     if (show_status) {
       status_future.wait();
     }

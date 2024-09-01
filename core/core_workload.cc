@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <random>
 #include <string>
+#include <iostream>
 
 using ycsbc::CoreWorkload;
 using std::string;
@@ -263,11 +264,11 @@ bool CoreWorkload::DoInsert(DB &db) {
   return db.Insert(table_name_, key, fields) == DB::kOK;
 }
 
-bool CoreWorkload::DoTransaction(DB &db) {
+bool CoreWorkload::DoTransaction(DB &db, bool lookaside) {
   DB::Status status;
   switch (op_chooser_.Next()) {
     case READ:
-      status = TransactionRead(db);
+      status = TransactionRead(db, lookaside);
       break;
     case UPDATE:
       status = TransactionUpdate(db);
@@ -287,16 +288,25 @@ bool CoreWorkload::DoTransaction(DB &db) {
   return (status == DB::kOK);
 }
 
-DB::Status CoreWorkload::TransactionRead(DB &db) {
+DB::Status CoreWorkload::TransactionRead(DB &db, bool lookaside) {
   uint64_t key_num = NextTransactionKeyNum();
   const std::string key = BuildKeyName(key_num);
   std::vector<DB::Field> result;
   if (!read_all_fields()) {
     std::vector<std::string> fields;
     fields.push_back(NextFieldName());
-    return db.Read(table_name_, key, &fields, result);
+
+    auto rnt = db.Read(table_name_, key, &fields, result);
+  
+    return rnt; 
   } else {
-    return db.Read(table_name_, key, NULL, result);
+    auto rnt = db.Read(table_name_, key, NULL, result);
+    if (rnt != DB::kOK && lookaside) {
+      std::vector<DB::Field> values;
+      BuildValues(values);
+      db.Insert(table_name_, key, values);
+    } 
+    return rnt;
   }
 }
 

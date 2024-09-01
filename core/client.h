@@ -21,7 +21,7 @@
 namespace ycsbc {
 
 inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops, bool is_loading,
-                        bool init_db, bool cleanup_db, utils::CountDownLatch *latch, utils::RateLimiter *rlim) {
+                        bool init_db, bool cleanup_db, utils::CountDownLatch *latch, utils::RateLimiter *rlim, std::atomic<uint64_t> &ops_thread){
 
   try {
     if (init_db) {
@@ -33,12 +33,16 @@ inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_op
       if (rlim) {
         rlim->Consume(1);
       }
-
       if (is_loading) {
         wl->DoInsert(*db);
       } else {
-        wl->DoTransaction(*db);
+        if (ops < 100000)
+          wl->DoTransaction(*db, true);
+        else
+          wl->DoTransaction(*db);
       }
+      // *total_ops++;
+      ops_thread ++;
       ops++;
     }
 

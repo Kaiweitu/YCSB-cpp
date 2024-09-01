@@ -66,12 +66,16 @@ namespace ycsbc
   std::unique_ptr<Cache> cache_;
   facebook::cachelib::PoolId defaultPool_;
   int CachelibDB::ref_cnt_ = 0;
+  int CachelibDB::init_cnt_ = 0;
   std::mutex CachelibDB::mu_;
 
   void CachelibDB::Init()
   {
     CacheConfig config;
     NvmCacheConfig nvmConfig;
+    int init_id = init_cnt_;
+
+    init_cnt_ ++;
 
     constexpr size_t GB = 1024ULL * 1024ULL * 1024ULL;
     constexpr size_t MB = 1024ULL * 1024ULL;
@@ -100,9 +104,10 @@ namespace ycsbc
     nvmCacheSize.push_back(std::stoi(props.GetProperty(PROP_PERF_CAPACITY_GB, PROP_PERF_CAPACITY_GB_DEFAULT)) * GB);
 
     std::vector<std::string> nvmCachePaths;
-    nvmCachePaths.push_back(props.GetProperty(PROP_CAP_DEVICE, PROP_CAP_DEVICE_DEFAULT));
-    nvmCachePaths.push_back(props.GetProperty(PROP_PERF_DEVICE, PROP_PERF_DEVICE_DEFAULT));
-
+    nvmCachePaths.push_back(props.GetProperty(PROP_CAP_DEVICE, PROP_CAP_DEVICE_DEFAULT) + "p" + std::to_string(init_id + 1));
+    nvmCachePaths.push_back(props.GetProperty(PROP_PERF_DEVICE, PROP_PERF_DEVICE_DEFAULT) + "p" + std::to_string(init_id + 1));
+    std::cout << nvmCachePaths[0] << " " << nvmCachePaths[1] << std::endl;
+    
     if (mode == "striping")
     {
       nvmConfig.navyConfig.setHierarchy(nvmCachePaths, nvmCacheSize, "raid");
@@ -175,8 +180,18 @@ namespace ycsbc
     config.cacheName = "ycsb-cachelib";
 
     cache_ = std::make_unique<Cache>(config);
+    auto mmConfig = Cache::MMConfig(60,
+                                0,
+                                false,
+                                true,
+                                false,
+                                0);
+
     defaultPool_ =
-        cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize);
+        cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize, {}, mmConfig, nullptr, nullptr, true);
+
+    
+    // defaultPool_ = cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize);
 
 
 
@@ -275,6 +290,7 @@ namespace ycsbc
   {
     std::string data;
     SerializeRow(values, &data);
+    // std::cout << data;
     auto handle = cache_->allocate(defaultPool_, key, data.length(), 0);
     if (!handle)
       throw utils::Exception(std::string("Cachelib Put failed "));
