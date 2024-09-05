@@ -16,6 +16,7 @@
 #include <future>
 #include <chrono>
 #include <iomanip>
+#include <future>
 
 #include "client.h"
 #include "core_workload.h"
@@ -39,10 +40,12 @@ void StatusThread(ycsbc::Measurements *measurements, ycsbc::utils::CountDownLatc
     std::time_t now_c = system_clock::to_time_t(now);
     duration<double> elapsed_time = now - start;
 
-    std::cout << std::put_time(std::localtime(&now_c), "%F %T") << ' '
+    std::cout << "***"
+              << std::put_time(std::localtime(&now_c), "%F %T") << ' '
               << static_cast<long long>(elapsed_time.count()) << " sec: ";
 
     std::cout << measurements->GetStatusMsg() << std::endl;
+    measurements->Reset();
 
     if (done) {
       break;
@@ -104,7 +107,9 @@ int main(const int argc, const char *argv[]) {
   }
 
   std::vector<ycsbc::DB *> dbs;
-  for (int i = 0; i < num_threads; i++) {
+  int db_num = 2;
+  int pool_num = 2;
+  for (int i = 0; i < db_num; i++) {
     ycsbc::DB *db = ycsbc::DBFactory::CreateDB(&props, measurements);
     if (db == nullptr) {
       std::cerr << "Unknown database name " << props["dbname"] << std::endl;
@@ -112,16 +117,22 @@ int main(const int argc, const char *argv[]) {
     }
     dbs.push_back(db);
   }
-  int db_num = 2;
-
-  for (int i = 0; i < db_num; i++)
+  
+  std::vector<ycsbc::CoreWorkload> wl(db_num);
+  for (int i = 0; i < db_num; i++) {
     dbs[i]->Init();
+    wl[i].Init(props);
+  }
+
+  // for (int i = 0; i < db_num * pool_num; i++) {
+  //   wl[i].Init(props);
+  // }
 
   // dbs[0]->Ini;
   // dbs[1]->Init();
 
-  ycsbc::CoreWorkload wl;
-  wl.Init(props);
+  
+  
 
   // print status periodically
   const bool show_status = (props.GetProperty("status", "false") == "true");
@@ -131,10 +142,8 @@ int main(const int argc, const char *argv[]) {
   std::vector<std::atomic<uint64_t>> ops_thread(num_threads);
 
   for (auto& atomic_ops : ops_thread) atomic_ops = 0;
-  const int total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
-  if (do_load) {
-  
-
+  const int total_ops = db_num * stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
+  if (do_load) {  
     ycsbc::utils::CountDownLatch latch(num_threads);
     ycsbc::utils::Timer<double> timer;
 
@@ -150,9 +159,12 @@ int main(const int argc, const char *argv[]) {
       if (i < total_ops % num_threads) {
         thread_ops++;
       }
-
-      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i % db_num], &wl,
-                                             thread_ops, true, false, !do_transaction, &latch, nullptr, std::ref(ops_thread[i])));
+      int wl_id = i % (db_num * pool_num);
+      int db_id = wl_id % db_num;
+      int pool_id = wl_id / db_num;
+      // std::cout << i << " " << wl_id << " " << db_id <<  " " << pool_id << std::endl;
+      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[db_id], &wl[db_id],
+                                             thread_ops, true, false, !do_transaction, &latch, nullptr, std::ref(ops_thread[i]), pool_id, 0));
     }
     assert((int)client_threads.size() == num_threads);
 
@@ -174,6 +186,8 @@ int main(const int argc, const char *argv[]) {
 
   measurements->Reset();
   std::this_thread::sleep_for(std::chrono::seconds(stoi(props.GetProperty("sleepafterload", "0"))));
+  auto warmed_ops = std::stoull(props.GetProperty("warm", "0")) / static_cast<uint64_t>(num_threads);
+  std::cout << "Warmed operations: " << warmed_ops << std::endl;
 
   // ops_overall = 0;
   // std::fill(ops_thread.begin(), ops_thread.end(), 0);
@@ -186,7 +200,7 @@ int main(const int argc, const char *argv[]) {
     std::string rate_file = props.GetProperty("limit.file", "");
 
     const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
-
+    std::cout << total_ops << std::endl;
     ycsbc::utils::CountDownLatch latch(num_threads);
     ycsbc::utils::Timer<double> timer;
 
@@ -204,19 +218,23 @@ int main(const int argc, const char *argv[]) {
         thread_ops++;
       }
       ycsbc::utils::RateLimiter *rlim = nullptr;
-      // if (ops_limit > 0 || rate_file != "") {
-      //   int64_t per_thread_ops = ops_limit / num_threads;
-      //   rlim = new ycsbc::utils::RateLimiter(per_thread_ops, per_thread_ops);
-      // }
+      if (ops_limit > 0 || rate_file != "") {
+        int64_t per_thread_ops = ops_limit / num_threads;
+        rlim = new ycsbc::utils::RateLimiter(per_thread_ops, per_thread_ops);
+      }
+      int wl_id = i % (db_num * pool_num);
+      int db_id = wl_id % db_num;
+      int pool_id = wl_id / db_num;
       rate_limiters.push_back(rlim);
-      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[i % db_num], &wl,
-                                             thread_ops, false, false, true, &latch, rlim, std::ref(ops_thread[i])));
+      // std::cout << i << " " <<wl_id << " " << db_id <<  " " << pool_id << std::endl;
+      client_threads.emplace_back(std::async(std::launch::async, ycsbc::ClientThread, dbs[db_id], &wl[db_id],
+                                             thread_ops, false, false, true, &latch, rlim, std::ref(ops_thread[i]), pool_id, warmed_ops));
     }
 
-    // std::future<void> rlim_future;
-    // if (rate_file != "") {
-    //   rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &latch);
-    // }
+    std::future<void> rlim_future;
+    if (rate_file != "") {
+      rlim_future = std::async(std::launch::async, RateLimitThread, rate_file, rate_limiters, &latch);
+    }
     
     assert((int)client_threads.size() == num_threads);
 
@@ -224,6 +242,7 @@ int main(const int argc, const char *argv[]) {
     
     uint64_t sum = 0;
     uint64_t prev_sum = 0;
+    
     while (true) {
     // int sum = 0;
     // for (auto &n : client_threads) {
@@ -233,16 +252,28 @@ int main(const int argc, const char *argv[]) {
 
       ycsbc::utils::Timer<double> period_timer;
       period_timer.Start();
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      std::this_thread::sleep_for(std::chrono::seconds(30));
 
       sum = 0;
       for (auto &ops_num : ops_thread) 
         sum += ops_num;
       double period_time = period_timer.End();
 
-      std::cout << "Run throughput(ops/sec): " << (sum  - prev_sum)/ period_time << std::endl; 
-      if (sum >= total_ops)
-        break;
+      std::cout << "Run throughput(ops/sec): " << static_cast<int>((sum  - prev_sum)/ period_time) << std::endl; 
+      std::cout << "Total ops: " << sum  << std::endl; 
+      // if (sum >= total_ops)
+      //   break;
+      int finished_thread = 0;
+      for (auto &f: client_threads) {
+        auto rnt = f.wait_for(std::chrono::seconds(0));
+        if (rnt == std::future_status::ready) finished_thread ++;
+      }
+
+      std::cout << "Finished Client: " << finished_thread  << std::endl;  
+
+      if (finished_thread == num_threads) break;
+
+
 
       prev_sum = sum;
     }
@@ -263,7 +294,7 @@ int main(const int argc, const char *argv[]) {
     std::cout << "Run throughput(ops/sec): " << sum / runtime << std::endl;
   }
 
-  for (int i = 0; i < num_threads; i++) {
+  for (int i = 0; i < db_num; i++) {
     delete dbs[i];
   }
 }
@@ -285,6 +316,15 @@ void ParseCommandLine(int argc, const char *argv[], ycsbc::utils::Properties &pr
         exit(0);
       }
       props.SetProperty("threadcount", argv[argindex]);
+      argindex++;
+    } else if (strcmp(argv[argindex], "-warm") == 0) {
+      argindex ++;
+      if (argindex >= argc) {
+        UsageMessage(argv[0]);
+        std::cerr << "Missing argument value for -threads" << std::endl;
+        exit(0);
+      }
+      props.SetProperty("warm", argv[argindex]);
       argindex++;
     } else if (strcmp(argv[argindex], "-db") == 0) {
       argindex++;

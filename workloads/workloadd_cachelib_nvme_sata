@@ -11,8 +11,8 @@
 # which orders items purely by time, and demands the latest, is very different than 
 # workload here (which we believe is more typical of how people build systems.)
 
-recordcount=5000000
-operationcount=200000000
+recordcount=10000000
+operationcount=500000000
 threadcount=256
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
@@ -25,4 +25,6 @@ scanproportion=0
 insertproportion=0.05
 
 requestdistribution=latest
+insertorder=ordered
+zeropadding=12
 

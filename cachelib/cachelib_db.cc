@@ -11,11 +11,10 @@
 #include "core/core_workload.h"
 #include "core/db_factory.h"
 #include "utils/utils.h"
+#include <random>
 
-#include "cachelib/allocator/Util.h"
-#include <cachelib/allocator/CacheAllocator.h>
-#include <cachelib/allocator/nvmcache/NvmCache.h>
 #include <folly/init/Init.h>
+#include <cassert>
 
 namespace
 {
@@ -56,26 +55,23 @@ namespace
 namespace ycsbc
 {
 
-  using Cache = facebook::cachelib::LruAllocator; // or Lru2QAllocator, or TinyLFUAllocator
-  using CacheConfig = typename Cache::Config;
-  using CacheKey = typename Cache::Key;
-  using CacheItemHandle = typename Cache::ItemHandle;
-  using NvmCacheConfig = typename facebook::cachelib::NvmCache<Cache>::Config;
-
   // CachelibDB *CachelibDB::db_ = nullptr;
-  std::unique_ptr<Cache> cache_;
-  facebook::cachelib::PoolId defaultPool_;
+
   int CachelibDB::ref_cnt_ = 0;
   int CachelibDB::init_cnt_ = 0;
-  std::mutex CachelibDB::mu_;
+  // std::mutex CachelibDB::mu_;
+  thread_local facebook::cachelib::PoolId CachelibDB::defaultPool_ = 0;
 
   void CachelibDB::Init()
   {
+    
     CacheConfig config;
     NvmCacheConfig nvmConfig;
     int init_id = init_cnt_;
 
-    init_cnt_ ++;
+    init_cnt_++;
+
+    engine.seed(rd());
 
     constexpr size_t GB = 1024ULL * 1024ULL * 1024ULL;
     constexpr size_t MB = 1024ULL * 1024ULL;
@@ -107,7 +103,7 @@ namespace ycsbc
     nvmCachePaths.push_back(props.GetProperty(PROP_CAP_DEVICE, PROP_CAP_DEVICE_DEFAULT) + "p" + std::to_string(init_id + 1));
     nvmCachePaths.push_back(props.GetProperty(PROP_PERF_DEVICE, PROP_PERF_DEVICE_DEFAULT) + "p" + std::to_string(init_id + 1));
     std::cout << nvmCachePaths[0] << " " << nvmCachePaths[1] << std::endl;
-    
+
     if (mode == "striping")
     {
       nvmConfig.navyConfig.setHierarchy(nvmCachePaths, nvmCacheSize, "raid");
@@ -180,26 +176,36 @@ namespace ycsbc
     config.cacheName = "ycsb-cachelib";
 
     cache_ = std::make_unique<Cache>(config);
-    auto mmConfig = Cache::MMConfig(60,
-                                0,
-                                false,
-                                true,
-                                false,
-                                0);
 
-    defaultPool_ =
-        cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize, {}, mmConfig, nullptr, nullptr, true);
+    for (int i = 0; i < pool_num_; i++)
+    {
+      auto mmConfig = Cache::MMConfig(60,
+                                      0.1,
+                                      false,
+                                      true,
+                                      false,
+                                      0);
 
-    
+      poolID_.push_back(
+          cache_->addPool("default" + std::to_string(i), cache_->getCacheMemoryStats().cacheSize / pool_num_, {}, mmConfig, nullptr, nullptr, true));
+    }
+    // auto mmConfig = Cache::MMConfig(60,
+    //                                 0,
+    //                                 false,
+    //                                 true,
+    //                                 false,
+    //                                 0);
+
+    // defaultPool_ =
+    //     cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize, {}, mmConfig, nullptr, nullptr, true);
+
     // defaultPool_ = cache_->addPool("default", cache_->getCacheMemoryStats().cacheSize);
-
-
 
     method_read_ = &CachelibDB::find;
     method_scan_ = &CachelibDB::scan;
     method_update_ = &CachelibDB::insertOrReplace;
     method_insert_ = &CachelibDB::insertOrReplace;
-    method_delete_ = &CachelibDB::remove; 
+    method_delete_ = &CachelibDB::remove;
 
     return;
   }
@@ -271,6 +277,7 @@ namespace ycsbc
   DB::Status CachelibDB::find(const std::string &table, const std::string &key,
                               const std::vector<std::string> *fields, std::vector<Field> &result)
   {
+
     auto it = cache_->find((CacheKey)key, facebook::cachelib::AccessMode::kRead);
     it.wait();
     if (!it)
@@ -290,8 +297,13 @@ namespace ycsbc
   {
     std::string data;
     SerializeRow(values, &data);
-    // std::cout << data;
-    auto handle = cache_->allocate(defaultPool_, key, data.length(), 0);
+
+    std::uniform_int_distribution<int> dist(0, 1);
+    // defaultPool_
+    // auto id = thread_pool_mapping[std::this_thread::get_id()];
+    // assert(id < poolID_.size());
+    // auto handle = cache_->allocate(poolID_[dist(engine)], key, data.length(), 0);
+    auto handle = cache_->allocate(hash_fn(key) % pool_num_, key, data.length(), 0);
     if (!handle)
       throw utils::Exception(std::string("Cachelib Put failed "));
 
@@ -304,8 +316,7 @@ namespace ycsbc
   DB::Status CachelibDB::remove(const std::string &table, const std::string &key)
   {
     // leveldb::WriteOptions wopt;
-    auto rv = cache_->remove(key); 
-
+    auto rv = cache_->remove(key);
 
     if (rv == Cache::RemoveRes::kNotFoundInRam)
       throw utils::Exception(std::string("Cachelib Delete failed"));
@@ -313,13 +324,99 @@ namespace ycsbc
     return kOK;
   }
 
+  uint64_t extractNumber(const std::string &key)
+  {
+    // // Find the position where the numeric part starts
+    // std::size_t pos = key.find_first_of("0123456789");
+
+    // if (pos == std::string::npos)
+    // {
+    //   // No digits found in the string
+    //   throw std::invalid_argument("No numeric part found in the key string");
+    // }
+
+    // Extract the numeric part of the string
+    std::string numberStr = key.substr(4);
+
+    // Convert the numeric part to uint64_t
+    try
+    {
+      uint64_t number = std::stoull(numberStr);
+      return number;
+    }
+    catch (const std::invalid_argument &e)
+    {
+      // Handle case where the conversion fails
+      throw std::invalid_argument("Invalid number format in key string");
+    }
+    catch (const std::out_of_range &e)
+    {
+      // Handle case where the number is out of range for uint64_t
+      throw std::out_of_range("Number in key string is out of uint64_t range");
+    }
+  }
+
   DB::Status CachelibDB::scan(const std::string &table, const std::string &key, int len,
                               const std::vector<std::string> *fields,
-                              std::vector<std::vector<Field>> &result) {
-   throw utils::Exception(std::string("Cachelib Scan not implemented"));
+                              std::vector<std::vector<Field>> &result)
+  {
+    uint64_t key_offset = 0;
+    uint64_t key_num_base = extractNumber(key);
+    int found = 0;
+    int offset_max = 100;
 
-   return kOK; 
+    // Precompute the length of the fixed portion of the key to avoid repeated calculations
+    const int prekey_length = prekey.size();
+    char cur_key[prekey_length + total_length + 1];      // +1 for null-terminator
+    std::memcpy(cur_key, prekey.c_str(), prekey_length); // Copy the fixed prefix
+    cur_key[prekey_length + total_length] = '\0';        // Null-terminate
+
+    while (true)
+    {
+      // Directly convert number to string and place it into cur_key
+      uint64_t current_key_num = key_num_base + key_offset;
+      int digits_written = snprintf(cur_key + prekey_length, total_length + 1, "%012lu", current_key_num);
+
+      // Perform the cache lookup
+      auto it = cache_->find((CacheKey)cur_key, facebook::cachelib::AccessMode::kRead);
+      it.wait();
+      if (it)
+      {
+        std::string data(reinterpret_cast<const char *>(it->getMemory()), it->getSize());
+        result.emplace_back(); // Use emplace_back for efficiency
+        std::vector<Field> &values = result.back();
+
+        // Deserialize directly to the vector
+        if (fields != nullptr)
+        {
+          DeserializeRowFilter(&values, data, *fields);
+        }
+        else
+        {
+          DeserializeRow(&values, data);
+        }
+        assert(values.size() == static_cast<size_t>(fieldcount_));
+        found++;
+      }
+
+      // Check termination conditions
+      if (found == len || key_offset == offset_max)
+        break;
+      key_offset++;
+    }
+
+    return kOK;
   }
+  // void CachelibDB::RegisterThreadID(int thread_id) 
+  // {
+  //   // auto cnt = thread_cnt.fetch_add(1);
+  //   assert(thread_id < pool_num_.size());
+  //   defaultPool_ = poolID_[thread_id];
+
+  //   std::cout << "Address of x: " << std::hex << reinterpret_cast<std::uintptr_t>(&defaultPool_) << std::to_string((int) defaultPool_) << std::endl;
+
+  //   // thread_pool_mapping.insert({thread_id, poolID_[cnt % poolID_.size()]});
+  // };
 
   DB *NewCachelibDB()
   {

@@ -13,6 +13,8 @@
 
 #include <vector>
 #include <string>
+#include <thread>
+#include <iostream>
 
 namespace ycsbc {
 
@@ -102,9 +104,13 @@ class DB {
 
   virtual ~DB() { }
 
+  virtual void RegisterThreadID(int thread_id) {}
+
   void SetProps(utils::Properties *props) {
     props_ = props;
   }
+
+
  protected:
   utils::Properties *props_;
 };

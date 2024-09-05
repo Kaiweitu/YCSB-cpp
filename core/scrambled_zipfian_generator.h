@@ -36,8 +36,13 @@ class ScrambledZipfianGenerator : public Generator<uint64_t> {
   uint64_t Last();
 
  private:
-  static constexpr double kUsedZipfianConstant = 0.99;
-  static constexpr double kZetan = 26.46902820178302;
+  // static constexpr double kUsedZipfianConstant = 0.99;
+  // static constexpr double kZetan = 26.46902820178302;
+
+  static constexpr double kUsedZipfianConstant = 0.8;
+  static constexpr double kZetan = 495.56246159899212;
+
+
   static constexpr uint64_t kItemCount = 10000000000LL;
   const uint64_t base_;
   const uint64_t num_items_;

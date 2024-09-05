@@ -87,6 +87,10 @@ class DBWrapper : public DB {
     }
     return s;
   }
+
+  void RegisterThreadID(int thread_id) override {
+    db_->RegisterThreadID(thread_id);
+  }
  private:
   DB *db_;
   Measurements *measurements_;

@@ -261,6 +261,7 @@ bool CoreWorkload::DoInsert(DB &db) {
   const std::string key = BuildKeyName(insert_key_sequence_->Next());
   std::vector<DB::Field> fields;
   BuildValues(fields);
+  // std::cout << key << std::endl;
   return db.Insert(table_name_, key, fields) == DB::kOK;
 }
 

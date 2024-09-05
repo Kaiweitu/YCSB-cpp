@@ -13,6 +13,8 @@
 #include <cmath>
 #include <cstdint>
 #include <mutex>
+#include <iostream>
+#include <iomanip>
 
 #include "generator.h"
 #include "utils/utils.h"
@@ -66,6 +68,10 @@ class ZipfianGenerator : public Generator<uint64_t> {
     for (uint64_t i = last_num + 1; i <= cur_num; ++i) {
       zeta += 1 / std::pow(i, theta);
     }
+
+    // std::cout << std::fixed << std::setprecision(14);
+    // std::cout << theta << " " << zeta << std::endl;
+    // std::cout.unsetf(std::ios::fixed); 
     return zeta;
   }
 

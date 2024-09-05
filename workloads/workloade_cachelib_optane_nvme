@@ -11,8 +11,8 @@
 # instead interspersed with posts from lots of other threads. The way the YCSB client works is that it will pick a start
 # key, and then request a number of records; this works fine even for hashed insertion.
 
-recordcount=5000000
-operationcount=200000000
+recordcount=10000000
+operationcount=400000000
 threadcount=256
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
@@ -25,9 +25,15 @@ scanproportion=0.95
 insertproportion=0.05
 
 requestdistribution=zipfian
+zipfian_const = 0.8
+insertorder=ordered
+zeropadding=12
 
 maxscanlength=100
 
 scanlengthdistribution=uniform
+
+
+
 
 
