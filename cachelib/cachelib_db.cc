@@ -83,10 +83,10 @@ namespace ycsbc
     config.setCacheSize(cacheSize * (MB));
     config.enablePoolRebalancing(nullptr, std::chrono::seconds(0));
     config.setAccessConfig(typename Cache::AccessConfig{
-        static_cast<uint32_t>(22),
+        static_cast<uint32_t>(25),
         static_cast<uint32_t>(20)});
     config.configureChainedItems(typename Cache::AccessConfig{
-        static_cast<uint32_t>(22),
+        static_cast<uint32_t>(25),
         static_cast<uint32_t>(20)});
 
     // Nvm Cache Configuration
