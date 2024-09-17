@@ -39,10 +39,10 @@ inline int ClientThread(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_op
       if (is_loading) {
         is_success = wl->DoInsert(*db);
       } else {
-        if (ops < warmed_ops)
+        // if (ops < warmed_ops)
           is_success = wl->DoTransaction(*db, true);
-        else
-          is_success = wl->DoTransaction(*db);
+        // else
+          // is_success = wl->DoTransaction(*db);
       }
       // *total_ops++;
       if (is_success)

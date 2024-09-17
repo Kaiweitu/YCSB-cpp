@@ -91,6 +91,17 @@ class DBWrapper : public DB {
   void RegisterThreadID(int thread_id) override {
     db_->RegisterThreadID(thread_id);
   }
+
+
+  void printStats() override {
+    db_->printStats();
+  }
+
+
+  void warmed() override {
+    db_->warmed();
+  }
+  
  private:
   DB *db_;
   Measurements *measurements_;

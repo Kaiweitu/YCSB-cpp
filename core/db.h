@@ -105,6 +105,11 @@ class DB {
   virtual ~DB() { }
 
   virtual void RegisterThreadID(int thread_id) {}
+  
+
+  virtual void printStats() {}
+
+  virtual void warmed() {}
 
   void SetProps(utils::Properties *props) {
     props_ = props;

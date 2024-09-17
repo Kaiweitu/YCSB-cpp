@@ -50,6 +50,13 @@ namespace
 
   const std::string PROP_WRITER_THREAD = "cachelib.writer_thread";
   const std::string PROP_WRITER_THREAD_DEFAULT = "64";
+  
+  const std::string PROP_STEP_SIZE = "cachelib.step_size";
+  const std::string PROP_STEP_SIZE_DEFAULT = "209715200";
+
+
+  const std::string PROP_MIGRATE_RATE = "cachelib.migrate_rate";
+  const std::string PROP_MIGRATE_RATE_DEFAULT = "200";
 } // anonymous
 
 namespace ycsbc
@@ -111,9 +118,9 @@ namespace ycsbc
     else if (mode == "tiering" || mode == "most")
     {
       nvmConfig.navyConfig.setHierarchy(nvmCachePaths, nvmCacheSize, "tiering");
-      nvmConfig.navyConfig.setMigrateRate(100 * MB);
-      nvmConfig.navyConfig.setHotThreshold(4);
-      nvmConfig.navyConfig.setCoolingThreshold(200);
+      nvmConfig.navyConfig.setMigrateRate(std::stoi(props.GetProperty(PROP_MIGRATE_RATE, PROP_MIGRATE_RATE_DEFAULT)) * MB);
+      nvmConfig.navyConfig.setHotThreshold(8);
+      nvmConfig.navyConfig.setCoolingThreshold(18);
       nvmConfig.navyConfig.setHotBlockRegionSize(
           100000 * MB);
       nvmConfig.navyConfig.setOffloadRatioMax(
@@ -123,8 +130,11 @@ namespace ycsbc
       nvmConfig.navyConfig.setTieringPageSize(
           (uint64_t)2048 * KB);
 
-      if (mode == "most")
+      if (mode == "most") {
         nvmConfig.navyConfig.setIsHBRTuningOn(true);
+        nvmConfig.navyConfig.setHotBlockRegionSize(
+          std::stol(props.GetProperty(PROP_STEP_SIZE, PROP_STEP_SIZE_DEFAULT)) * MB);
+      }
       else
         nvmConfig.navyConfig.setIsHBRTuningOn(false);
     }

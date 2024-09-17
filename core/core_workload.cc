@@ -305,6 +305,7 @@ DB::Status CoreWorkload::TransactionRead(DB &db, bool lookaside) {
     if (rnt != DB::kOK && lookaside) {
       std::vector<DB::Field> values;
       BuildValues(values);
+      std::this_thread::sleep_for(std::chrono::microseconds(1500));
       db.Insert(table_name_, key, values);
     } 
     return rnt;

@@ -19,6 +19,7 @@
 #include <cachelib/allocator/Util.h>
 #include <cachelib/allocator/CacheAllocator.h>
 #include <cachelib/allocator/nvmcache/NvmCache.h>
+#include <cachelib/common/DeviceInfo.h>
 
 namespace ycsbc
 {
@@ -77,6 +78,43 @@ namespace ycsbc
       // thread_pool_mapping.insert({std::this_thread::get_id(), thread_id});
     }
 
+    void printStats() override
+    {
+      const auto cacheStats = cache_->getGlobalCacheStats();
+      const auto navyStats = cache_->getNvmCacheStatsMap();
+      auto numCacheGets = cacheStats.numCacheGets;
+      auto numCacheGetMiss = cacheStats.numCacheGetMiss;
+      auto numNvmGets = cacheStats.numNvmGets;
+      auto numNvmGetMiss = cacheStats.numNvmGetMiss;
+
+      auto lookup = [&navyStats](const std::string &key)
+      {
+        return navyStats.find(key) != navyStats.end()
+                   ? static_cast<uint64_t>(navyStats.at(key))
+                   : 0;
+      };
+
+      auto nvmThroughputPerf = lookup("navy_throughput_perf");
+      auto nvmThroughputCap = lookup("navy_throughput_cap");
+
+      double dramHitRatio = invertPctFn(numCacheGetMiss, numCacheGets);
+      double nvmHitRatio = invertPctFn(numNvmGetMiss, numNvmGets);
+      // double perfPct = pctFn(nvmThroughputPerf, nvmThroughputCap + nvmThroughputCap);
+      // Get the current time as a duration since the epoch
+      auto current_time = std::chrono::system_clock::now();
+
+      // Convert the time to seconds since the epoch
+      auto duration_in_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+          current_time.time_since_epoch());
+
+      std::cout << folly::sformat("### {} {} {:6.2f} {:6.2f} {} {}\n", duration_in_seconds.count(), numCacheGets, dramHitRatio, nvmHitRatio, nvmThroughputPerf, nvmThroughputCap);
+    }
+
+    void warmed() override
+    {
+      facebook::cachelib::DeviceMapping::getInstance().warmed = true;
+    }
+
   private:
     void SerializeRow(const std::vector<Field> &values, std::string *data);
     void DeserializeRowFilter(std::vector<Field> *values, const std::string &data,
@@ -107,6 +145,18 @@ namespace ycsbc
                                          std::vector<Field> &);
     Status (CachelibDB::*method_delete_)(const std::string &, const std::string &);
 
+    static double pctFn(uint64_t ops, uint64_t total)
+    {
+      return total == 0
+                 ? 100.0
+                 : 100.0 * static_cast<double>(ops) / static_cast<double>(total);
+    }
+
+    static double invertPctFn(uint64_t ops, uint64_t total)
+    {
+      return 100 - pctFn(ops, total);
+    }
+
     int fieldcount_;
     std::string field_prefix_;
     std::vector<facebook::cachelib::PoolId> poolID_;
@@ -129,6 +179,8 @@ namespace ycsbc
 
     // Use the random_device to seed the engine for more randomness
     std::random_device rd;
+
+    // uint64_t prev_cache_get{0};
 
     static int ref_cnt_;
     std::mutex mu_;

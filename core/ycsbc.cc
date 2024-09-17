@@ -242,6 +242,7 @@ int main(const int argc, const char *argv[]) {
     
     uint64_t sum = 0;
     uint64_t prev_sum = 0;
+
     
     while (true) {
     // int sum = 0;
@@ -263,6 +264,10 @@ int main(const int argc, const char *argv[]) {
       std::cout << "Total ops: " << sum  << std::endl; 
       // if (sum >= total_ops)
       //   break;
+      if (sum > 0) {
+        for (auto &db : dbs) 
+          db->warmed();
+      }
       int finished_thread = 0;
       for (auto &f: client_threads) {
         auto rnt = f.wait_for(std::chrono::seconds(0));
@@ -273,6 +278,8 @@ int main(const int argc, const char *argv[]) {
 
       if (finished_thread == num_threads) break;
 
+      for (auto &db : dbs) 
+        db->printStats();
 
 
       prev_sum = sum;
