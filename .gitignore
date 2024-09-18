@@ -9,3 +9,8 @@ compile_commands.json
 .clangd/
 .cache/
 build/
+result*
+test*
+fast-2025_data/
+hit_ratio_new/
+

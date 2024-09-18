@@ -74,9 +74,9 @@ def run_workload(workload, config, device, dir, type):
 
     if type == "hit_ratio":
       if config == "caching":
-        record_nums =  [40000000, 50000000] 
+        record_nums =  [10000000,  20000000,  30000000] 
       else:
-        record_nums = [5000000, 10000000,  20000000,  30000000, 40000000, 50000000]
+        record_nums = [10000000,  20000000,  30000000, 40000000, 50000000]
     else:
       record_nums = [10000000]
 
