@@ -110,14 +110,15 @@ namespace ycsbc
     nvmCachePaths.push_back(props.GetProperty(PROP_CAP_DEVICE, PROP_CAP_DEVICE_DEFAULT) + "p" + std::to_string(init_id + 1));
     nvmCachePaths.push_back(props.GetProperty(PROP_PERF_DEVICE, PROP_PERF_DEVICE_DEFAULT) + "p" + std::to_string(init_id + 1));
     std::cout << nvmCachePaths[0] << " " << nvmCachePaths[1] << std::endl;
-
+    std::cout << mode  << std::endl;
     if (mode == "striping")
     {
       nvmConfig.navyConfig.setHierarchy(nvmCachePaths, nvmCacheSize, "raid");
     }
-    else if (mode == "tiering" || mode == "most")
+    else if (mode == "tiering" || mode == "most" || mode.substr(0, 7) == "colloid")
     {
-      nvmConfig.navyConfig.setHierarchy(nvmCachePaths, nvmCacheSize, "tiering");
+       
+      nvmConfig.navyConfig.setHierarchy(nvmCachePaths, nvmCacheSize, mode);
       nvmConfig.navyConfig.setMigrateRate(std::stoi(props.GetProperty(PROP_MIGRATE_RATE, PROP_MIGRATE_RATE_DEFAULT)) * MB);
       nvmConfig.navyConfig.setHotThreshold(8);
       nvmConfig.navyConfig.setCoolingThreshold(18);
@@ -131,12 +132,12 @@ namespace ycsbc
           (uint64_t)2048 * KB);
 
       if (mode == "most") {
-        nvmConfig.navyConfig.setIsHBRTuningOn(true);
+        // nvmConfig.navyConfig.setIsHBRTuningOn(true);
         nvmConfig.navyConfig.setHotBlockRegionSize(
           std::stol(props.GetProperty(PROP_STEP_SIZE, PROP_STEP_SIZE_DEFAULT)) * MB);
       }
-      else
-        nvmConfig.navyConfig.setIsHBRTuningOn(false);
+      // else
+        // nvmConfig.navyConfig.setIsHBRTuningOn(false);
     }
     else if (mode == "caching")
     {

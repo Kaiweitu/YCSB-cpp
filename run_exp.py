@@ -160,12 +160,12 @@ if __name__ == "__main__":
 
     # Split the configuration argument by ',' to support multiple configurations
     if args.config == 'all':
-        configs = ['most', 'tiering', 'caching', 'striping']
+        configs = ['most', 'tiering', 'caching', 'striping', 'colloid++']
     else:
         configs = args.config.split(',')
 
     # Validate configurations
-    valid_configs = ['most', 'tiering', 'caching', 'striping']
+    valid_configs = ['most', 'tiering', 'caching', 'striping', 'colloid++']
     for conf in configs:
         if conf not in valid_configs:
             print(f"Invalid configuration: {conf}. Choose from 'caching', 'striping', 'most', 'tiering'.")
